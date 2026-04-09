@@ -2,7 +2,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.widgets import Slider
 
-def visualize_npy(file_path="/home/theo/code/hand-retargeting-sam3d/data/sam3d_outputs/dexsuite_joints.npy"):
+def visualize_npy(file_path="/home/theo/code/hand-retargeting-sam3d/data/sam3d_outputs/dexsuite_joints0.npy"):
     print(f"Loading {file_path}...")
     try:
         # Shape should be (Frames, Joints, 3)
