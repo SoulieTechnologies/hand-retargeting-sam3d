@@ -65,7 +65,7 @@ class SAM3DExtractor:
         print(f"Final Data Shape: {kinematics_matrix.shape}")
 
 if __name__ == "__main__":
-    my_video = "/home/theo/code/hand-retargeting-sam3d/data/raw_videos/test_hand_video.mp4" 
+    my_video = "/home/theo/code/hand-retargeting-sam3d/data/raw_videos/test_hand_video1.mp4" 
     
     extractor = SAM3DExtractor()
-    extractor.process_video(my_video, "dexsuite_joints.npy")
+    extractor.process_video(my_video, "../data/sam3d_outputs/dexsuite_joints1.npy")
