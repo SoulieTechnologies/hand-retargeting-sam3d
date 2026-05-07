@@ -1,5 +1,7 @@
 import numpy as np
 import pinocchio as pin
+import pinocchio.casadi as cpin
+import casadi
 from urdf_scaler import scale_and_shift_urdf
 
 hand_data = np.load("/home/theo/code/hand-retargeting-sam3d/data/sam3d_outputs/dexsuite_joints1.npy")
@@ -8,8 +10,8 @@ right_hand_points = hand_data[:, 1, :, :]
 base_dir = "/home/theo/code/hand-retargeting-sam3d/assets/sharpa_hand"
 base_urdf = f"{base_dir}/wave_01/right_sharpa_wave/right_sharpa_wave.urdf"
 scaled_urdf = f"{base_dir}/wave_01/right_sharpa_wave/right_sharpa_wave_scaled.urdf"
-z_correction = -0.15
-global_scale = 0.8  
+z_correction = -0.04
+global_scale = 0.85
 print(f"Scaling factor: {global_scale} and z-shifting: {z_correction}")
 scale_and_shift_urdf(base_urdf, scaled_urdf, global_scale, z_correction)
 
@@ -18,6 +20,9 @@ model = pin.buildModelFromUrdf(
     pin.JointModelFreeFlyer()
 )
 data = model.createData()
+
+cmodel = cpin.Model(model)
+cdata = cmodel.createData()
 
 #Orca_hand
 # # joint_mapping = {
@@ -81,60 +86,53 @@ frame_ids = {
     for point_idx, frame_name in joint_mapping.items()
 }
 
+cq = casadi.SX.sym("q", model.nq)
+
+ctargets = casadi.SX.sym("targets", len(frame_ids), 3)
+cpin.forwardKinematics(cmodel, cdata, cq)
+cpin.updateFramePlacements(cmodel, cdata)
+
+total_error = 0
+
+for i, (point_idx, frame_id) in enumerate(frame_ids.items()):
+    current_pos = cdata.oMf[frame_id].translation
+    target_pos = ctargets[i, :].T
+    total_error += casadi.sumsqr(current_pos - target_pos)
+
+nlp = {'x': cq, 'f': total_error, 'p': ctargets}
+
+opts = {'ipopt.print_level': 0, 'print_time': 0, 'ipopt.tol': 1e-6}
+solver = casadi.nlpsol('solver', 'ipopt', nlp, opts)
+
 q = pin.neutral(model)
-
-alpha = 0.1
-tolerance = 1e-4
-max_iterations = 1000
-
 joint_angles_trajectory = []
 
 for frame_idx in range(right_hand_points.shape[0]):
     target_points = right_hand_points[frame_idx].copy()
-    
-    wrist_target = target_points[11].copy()
+
+    wrist_target = target_points[20].copy()
     target_points = target_points - wrist_target
-    target_points[:, 2] = -target_points[:, 2] 
-    
+    target_points[:, 2] = -target_points[:, 2]
 
-    for iteration in range(max_iterations):
-        pin.forwardKinematics(model, data, q)
-        pin.updateFramePlacements(model, data)
+    active_targets = np.array([target_points[idx] for idx in frame_ids.keys()])
 
-        error = np.zeros(len(frame_ids) * 3)
-        J_full = np.zeros((len(frame_ids)*3, model.nv))
+    solution = solver(
+        x0=q,
+        lbx=model.lowerPositionLimit,
+        ubx=model.upperPositionLimit,
+        p=active_targets
+    )
 
-        row = 0
+    q = solution['x'].full().flatten()
+    pin.framesForwardKinematics(model, data, q)
+    tip_error_cm = np.linalg.norm(data.oMf[frame_ids[4]].translation - target_points[4]) * 100
+    print(f"Frame {frame_idx} | Index Tip Error: {tip_error_cm:.2f} cm")
 
-        for point_idx, frame_id in frame_ids.items():
-            current_position = data.oMf[frame_id].translation
-            target_position = target_points[point_idx]
+    q[3:7] /= np.linalg.norm(q[3:7])
 
-            pos_error = current_position - target_position
-            error[row:row+3] = pos_error
-
-            J_frame = pin.computeFrameJacobian(model, data, q, frame_id, pin.LOCAL_WORLD_ALIGNED)
-            J_full[row:row+3, :] = J_frame[:3, :]
-
-            row += 3
-        
-        if np.linalg.norm(error) < tolerance: 
-            break
-
-        lambda_damp = 1e-2
-        I = np.eye(J_full.shape[0])
-        J_dls = J_full.T @ np.linalg.inv(J_full @ J_full.T + (lambda_damp**2) * I)
-
-        velocity = -alpha *(J_dls) @ error
-        q = pin.integrate(model, q, velocity)
-
-        q[7:] = np.clip(
-            q[7:],
-            model.lowerPositionLimit[7:],
-            model.upperPositionLimit[7:]
-        )
-    print(f"{frame_idx + 1}/{right_hand_points.shape[0]} frames completed...")
     joint_angles_trajectory.append(q.copy())
 
-np.save("data/actions/retargeted_angles.npy", np.array(joint_angles_trajectory))
+    print(f"Processed {frame_idx+1}/{right_hand_points.shape[0]} frames...")
+    
+np.save("data/actions/retargeted_angles_casadi.npy", np.array(joint_angles_trajectory))
 print("Retargeting complete! Saved to retargeted_angles.npy")

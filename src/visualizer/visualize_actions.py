@@ -21,11 +21,11 @@ _PROJECT_ROOT = os.path.abspath(os.path.join(_SCRIPT_DIR, ".."))
 
 
 def _default_actions_path() -> str:
-    return os.path.join(_PROJECT_ROOT, "data", "actions", "orcahand_actions.npy")
+    return os.path.join(_PROJECT_ROOT, "data", "actions", "retargeted_angles.npy")
 
 
 def _default_urdf_path() -> str:
-    return os.path.join(_PROJECT_ROOT, "assets", "orcahand", "orcahand_scaled.urdf")
+    return os.path.join(_PROJECT_ROOT, "assets", "sharpa_hand", "right_sharpa_wave", "right_sharpa_wave_scaled.urdf")
 
 
 def _fingerprint(a: np.ndarray) -> str:
